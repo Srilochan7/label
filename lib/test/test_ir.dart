@@ -1,63 +1,106 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:sizer/sizer.dart';
 
-class TestPage extends StatelessWidget {
+class TestPage extends StatefulWidget {
   const TestPage({super.key});
 
-  Future<void> _openCamera(BuildContext context) async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.camera);
-    if (image != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image captured: ${image.path}')),
-      );
-    }
+  @override
+  _TestPageState createState() => _TestPageState();
+}
+
+class _TestPageState extends State<TestPage> {
+  late CameraController _cameraController;
+  late Future<void> _initializeControllerFuture;
+
+  // To store the captured image
+  XFile? _capturedImage;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
   }
 
-  void _showCameraOverlay(BuildContext context) {
-    showModalBottomSheet(
+  Future<void> _initializeCamera() async {
+    final cameras = await availableCameras();
+    _cameraController = CameraController(
+      cameras[0],
+      ResolutionPreset.medium,
+    );
+    _initializeControllerFuture = _cameraController.initialize();
+  }
+
+  @override
+  void dispose() {
+    _cameraController.dispose();
+    super.dispose();
+  }
+
+  // Show the camera preview in a pop-up
+  void _showCameraPopup(BuildContext context) {
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        height: 60.h, // Adjust height for the camera overlay
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            SizedBox(height: 2.h),
-            Text(
-              'Camera Preview',
-              style: TextStyle(color: Colors.white, fontSize: 14.sp),
-            ),
-            SizedBox(height: 2.h),
-            Container(
-              width: 80.w, // Adjust width for the "camera" area
-              height: 40.h, // Adjust height for the "camera" area
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.blueAccent, width: 2),
-                borderRadius: BorderRadius.circular(12),
-                color: Colors.grey[900], // Simulate the camera preview
-              ),
-              child: Center(
-                child: Icon(Icons.camera_alt, color: Colors.white, size: 10.w),
-              ),
-            ),
-            Spacer(),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context); // Close overlay
-                _openCamera(context); // Trigger actual camera
-              },
-              child: Text('Capture', style: TextStyle(fontSize: 12.sp)),
-            ),
-            SizedBox(height: 2.h),
-          ],
-        ),
-      ),
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: FutureBuilder<void>(
+            future: _initializeControllerFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.done) {
+                return Stack(
+                  children: [
+                    // Camera preview
+                    Container(
+                      width: 80.w, // Set width for pop-up
+                      height: 40.h, // Set height for pop-up
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CameraPreview(_cameraController),
+                      ),
+                    ),
+                    // Button to capture the photo
+                    Positioned(
+                      bottom: 10,
+                      left: 35.w,
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 30.sp,
+                        ),
+                        onPressed: () async {
+                          try {
+                            // Capture image
+                            final image = await _cameraController.takePicture();
+                            setState(() {
+                              _capturedImage = image;
+                            });
+
+                            // Show confirmation message
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Image captured: ${image.path}')),
+                            );
+                          } catch (e) {
+                            print("Error capturing image: $e");
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              } else {
+                return Center(child: CircularProgressIndicator());
+              }
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -70,7 +113,7 @@ class TestPage extends StatelessWidget {
       ),
       body: Center(
         child: ElevatedButton(
-          onPressed: () => _showCameraOverlay(context),
+          onPressed: () => _showCameraPopup(context),
           style: ElevatedButton.styleFrom(
             padding: EdgeInsets.symmetric(
               horizontal: 8.w,
